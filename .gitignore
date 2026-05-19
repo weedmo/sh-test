@@ -1,0 +1,14 @@
+# Claude Code session artefacts must never enter the index.
+# Worktrees in particular were once accidentally committed as gitlinks
+# (mode 160000) — see CLAUDE.md for the policy.
+.claude/worktrees/
+.claude/jobs/
+.claude/skills/cache/
+
+# Local script outputs
+/var/log/laptop-baseline.txt
+*.bak-[0-9]*
+
+# Editor / OS noise
+*.swp
+.DS_Store
