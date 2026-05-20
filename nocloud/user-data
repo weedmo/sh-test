@@ -17,8 +17,8 @@
 # After install, on first boot:
 #   1. first-boot-setup.service  runs setup-docker.sh + setup-laptop.sh
 #      once, drops /var/lib/first-boot-setup.done
-#   2. simdd.service starts /opt/simdd/start-simdd.run as a daemon with
-#      Restart=on-failure, ordered after docker.service and
+#   2. simdd.service starts /home/<CellNNN>/simdd/start-simdd.run as a
+#      daemon with Restart=on-failure, ordered after docker.service and
 #      first-boot-setup.service
 autoinstall:
   version: 1
@@ -50,11 +50,12 @@ autoinstall:
     - cp -r /cdrom/extras /target/opt/setup
     - chmod +x /target/opt/setup/setup-docker.sh /target/opt/setup/setup-laptop.sh
     - find /target/opt/setup/phases -name '*.sh' -exec chmod +x {} +
-    - mkdir -p /target/opt/simdd
-    - cp -r /cdrom/extras/simdd/. /target/opt/simdd/
-    - chmod +x /target/opt/simdd/start-simdd.run /target/opt/simdd/view-head.run /target/opt/simdd/find_camera.sh
-    - sed -i "s/^SIMDD_CELL_ID=.*/SIMDD_CELL_ID=${ISO_CELL_ID}/" /target/opt/simdd/simdd_config.txt
-    - sed -i "s/^SIMDD_SECTOR=.*/SIMDD_SECTOR=${ISO_SECTOR}/"   /target/opt/simdd/simdd_config.txt
+    - mkdir -p /target/home/${ISO_CELL_NAME}/simdd
+    - cp -r /cdrom/extras/simdd/. /target/home/${ISO_CELL_NAME}/simdd/
+    - chmod +x /target/home/${ISO_CELL_NAME}/simdd/start-simdd.run /target/home/${ISO_CELL_NAME}/simdd/view-head.run /target/home/${ISO_CELL_NAME}/simdd/find_camera.sh
+    - sed -i "s/^SIMDD_CELL_ID=.*/SIMDD_CELL_ID=${ISO_CELL_ID}/" /target/home/${ISO_CELL_NAME}/simdd/simdd_config.txt
+    - sed -i "s/^SIMDD_SECTOR=.*/SIMDD_SECTOR=${ISO_SECTOR}/"   /target/home/${ISO_CELL_NAME}/simdd/simdd_config.txt
+    - curtin in-target --target=/target -- chown -R ${ISO_CELL_NAME}:${ISO_CELL_NAME} /home/${ISO_CELL_NAME}/simdd
     - |
       cat > /target/etc/systemd/system/first-boot-setup.service <<'EOF'
       [Unit]
@@ -84,9 +85,9 @@ autoinstall:
 
       [Service]
       Type=simple
-      WorkingDirectory=/opt/simdd
-      EnvironmentFile=/opt/simdd/simdd_config.txt
-      ExecStart=/opt/simdd/start-simdd.run
+      WorkingDirectory=/home/${ISO_CELL_NAME}/simdd
+      EnvironmentFile=/home/${ISO_CELL_NAME}/simdd/simdd_config.txt
+      ExecStart=/home/${ISO_CELL_NAME}/simdd/start-simdd.run
       Restart=on-failure
       RestartSec=5s
       StandardOutput=journal
