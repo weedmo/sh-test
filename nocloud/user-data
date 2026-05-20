@@ -1,15 +1,25 @@
 #cloud-config
-# Ubuntu 24.04 (subiquity) autoinstall configuration.
+# Ubuntu 24.04 (subiquity) autoinstall configuration — multi-cell template.
 #
-# Rendered by build-iso.sh: ${...} placeholders are filled in via envsubst.
-# Required envs: ISO_HOSTNAME, ISO_USERNAME, ISO_PASSWORD_HASH,
-# SSH_AUTHORIZED_KEY.
+# Rendered by build-iso.sh once per cell (Cell001..Cell016) with envsubst.
+# Required envs:
+#   ISO_CELL_ID         integer 1..16 (no padding, matches simdd_config.txt)
+#   ISO_CELL_NAME       Cell001..Cell016 (3-digit zero-padded, used for
+#                       Linux username + realname)
+#   ISO_HOSTNAME        cell01..cell16 (2-digit zero-padded)
+#   ISO_SECTOR          sectorA (extensible)
+#   ISO_PASSWORD_HASH   SHA-512 crypt hash of the Ubuntu user password
+#   SSH_AUTHORIZED_KEY  full authorized_keys line (optional; if empty,
+#                       SSH is enabled but no key is registered — the
+#                       host is only reachable from local console until
+#                       a key is added manually)
 #
-# The host comes up with:
-#   - SSH server installed, password login disabled (key-only)
-#   - /opt/setup populated from /cdrom/extras
-#   - first-boot-setup.service that runs setup-docker.sh + setup-laptop.sh
-#     exactly once, then drops a /var/lib/first-boot-setup.done sentinel.
+# After install, on first boot:
+#   1. first-boot-setup.service  runs setup-docker.sh + setup-laptop.sh
+#      once, drops /var/lib/first-boot-setup.done
+#   2. simdd.service starts /opt/simdd/start-simdd.run as a daemon with
+#      Restart=on-failure, ordered after docker.service and
+#      first-boot-setup.service
 autoinstall:
   version: 1
   locale: en_US.UTF-8
@@ -17,9 +27,8 @@ autoinstall:
     layout: us
   identity:
     hostname: ${ISO_HOSTNAME}
-    realname: ${ISO_USERNAME}
-    username: ${ISO_USERNAME}
-    # Password is locked by default ('!'); SSH key-only auth below.
+    realname: ${ISO_CELL_NAME}
+    username: ${ISO_CELL_NAME}
     password: "${ISO_PASSWORD_HASH}"
   ssh:
     install-server: true
@@ -38,6 +47,11 @@ autoinstall:
     - cp -r /cdrom/extras /target/opt/setup
     - chmod +x /target/opt/setup/setup-docker.sh /target/opt/setup/setup-laptop.sh
     - find /target/opt/setup/phases -name '*.sh' -exec chmod +x {} +
+    - mkdir -p /target/opt/simdd
+    - cp -r /cdrom/extras/simdd/. /target/opt/simdd/
+    - chmod +x /target/opt/simdd/start-simdd.run /target/opt/simdd/view-head.run /target/opt/simdd/find_camera.sh
+    - sed -i "s/^SIMDD_CELL_ID=.*/SIMDD_CELL_ID=${ISO_CELL_ID}/" /target/opt/simdd/simdd_config.txt
+    - sed -i "s/^SIMDD_SECTOR=.*/SIMDD_SECTOR=${ISO_SECTOR}/"   /target/opt/simdd/simdd_config.txt
     - |
       cat > /target/etc/systemd/system/first-boot-setup.service <<'EOF'
       [Unit]
@@ -56,4 +70,26 @@ autoinstall:
       [Install]
       WantedBy=multi-user.target
       EOF
+    - |
+      cat > /target/etc/systemd/system/simdd.service <<'EOF'
+      [Unit]
+      Description=SIMDD runtime
+      After=network-online.target docker.service first-boot-setup.service
+      Wants=network-online.target
+      Requires=docker.service
+
+      [Service]
+      Type=simple
+      WorkingDirectory=/opt/simdd
+      EnvironmentFile=/opt/simdd/simdd_config.txt
+      ExecStart=/opt/simdd/start-simdd.run
+      Restart=on-failure
+      RestartSec=5s
+      StandardOutput=journal
+      StandardError=journal
+
+      [Install]
+      WantedBy=multi-user.target
+      EOF
     - curtin in-target --target=/target -- systemctl enable first-boot-setup.service
+    - curtin in-target --target=/target -- systemctl enable simdd.service
