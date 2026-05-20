@@ -141,27 +141,31 @@ cd sh-test
 sudo ./setup-laptop.sh
 ```
 
-### Option D — Single-USB autoinstall ISO (zero-touch install)
+### Option D — Multi-cell autoinstall USB (16 cells per ISO)
 
-Build an Ubuntu 24.04 installer USB that **also** runs `setup-docker.sh` +
-`setup-laptop.sh` on first boot. One ISO replaces the manual install + curl
-flow above.
+One ISO installs any of Cell001..Cell016 in a single sector. The GRUB
+menu shows 16 entries; pick the right one for the machine in front of
+you. On first boot the host runs `setup-docker.sh` + `setup-laptop.sh`
+and then starts `simdd.service` as a daemon. SSH lands on the
+`CellNNN` account.
 
 ```bash
-sudo apt install xorriso gettext-base curl   # build host deps
+sudo apt install xorriso gettext-base curl openssl python3   # build host deps
 SSH_AUTHORIZED_KEY="$(cat ~/.ssh/id_ed25519.pub)" \
-ISO_USERNAME=tommoro ISO_HOSTNAME=lab01 \
+SIMDD_ZIP=~/Downloads/drive-download-20260519T075900Z-3-001.zip \
 ./build-iso.sh
-# → build/ubuntu-24.04-autoinstall.iso
-sudo dd if=build/ubuntu-24.04-autoinstall.iso of=/dev/sdX bs=4M \
+# → build/ubuntu-24.04-multi-cell-sectorA.iso
+sudo dd if=build/ubuntu-24.04-multi-cell-sectorA.iso of=/dev/sdX bs=4M \
         status=progress conv=fsync
 ```
 
-The first boot enables `first-boot-setup.service` which runs both setup
-scripts once, then drops `/var/lib/first-boot-setup.done`. Default account
-is SSH-key-only (password login disabled). See
-[`docs/usb-install.md`](./docs/usb-install.md) for the full design rationale
-and alternative delivery formats (Cubic, Ventoy, OCI image).
+Defaults: `ISO_SECTOR=sectorA`, `UBUNTU_PASSWORD=1234` (locally hashed),
+SSH is key-only via `SSH_AUTHORIZED_KEY` (empty value = SSH installed
+but unreachable until you add a key manually — local console only).
+
+For sector expansion, re-run with a different `ISO_SECTOR` to produce a
+second ISO. Design rationale and per-cell layout in
+[`docs/superpowers/specs/2026-05-20-multi-cell-usb-design.md`](./docs/superpowers/specs/2026-05-20-multi-cell-usb-design.md).
 
 ### Order on a fresh box
 
