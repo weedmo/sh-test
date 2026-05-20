@@ -1,29 +1,31 @@
 #!/usr/bin/env bash
-# build-iso.sh — Build a single-USB Ubuntu 24.04 autoinstall ISO that bundles
-# the setup scripts so a fresh laptop comes up with Docker + tuning applied.
+# build-iso.sh — Build one Ubuntu 24.04 autoinstall ISO covering 16 cells
+# (Cell001..Cell016) within one sector. GRUB shows 16 menu entries; each
+# entry points at a different nocloud datasource so subiquity sees a
+# user-data tailored to that cell (username, hostname, SIMDD_CELL_ID).
 #
 # Outputs:
-#   build/ubuntu-24.04-autoinstall.iso   (override via OUTPUT_ISO)
-#
-# Usage:
-#   SSH_AUTHORIZED_KEY="$(cat ~/.ssh/id_ed25519.pub)" \
-#   ISO_USERNAME=tommoro ISO_HOSTNAME=lab01 \
-#   ./build-iso.sh
+#   build/ubuntu-24.04-multi-cell-${ISO_SECTOR}.iso
 #
 # Required env:
-#   SSH_AUTHORIZED_KEY     Full authorized_keys line for the initial account.
+#   SIMDD_ZIP            path to the .zip containing start-simdd.run +
+#                        view-head.run + find_camera.sh + simdd_config.txt
 #
 # Optional env:
-#   ISO_USERNAME           default 'ubuntu'
-#   ISO_HOSTNAME           default 'ubuntu-laptop'
-#   ISO_PASSWORD_HASH      default '!' (locked, SSH-key-only)
-#   SRC_ISO                path to an already-downloaded live-server ISO
-#   UBUNTU_ISO_URL         default 24.04 live-server amd64 release ISO
-#   OUTPUT_ISO             default build/ubuntu-24.04-autoinstall.iso
+#   ISO_SECTOR           default 'sectorA'
+#   UBUNTU_PASSWORD      default '1234' (hashed locally; never sent over
+#                        the network; stays out of git via build/ ignore)
+#   SSH_AUTHORIZED_KEY   if empty, SSH is enabled but has no keys (host
+#                        only reachable via local console until a key
+#                        gets added manually). Warned, not fatal.
+#   SRC_ISO              path to an already-downloaded live-server ISO
+#   UBUNTU_ISO_URL       default 24.04 live-server amd64 release ISO
+#   OUTPUT_ISO           override output path
+#   ISO_GRUB_TIMEOUT     default 30 (seconds the menu waits)
+#   ISO_GRUB_DEFAULT     default 0 (Cell001)
 #
-# Burn the resulting ISO to a USB stick with `dd`, Rufus (DD-image mode), or
-# Balena Etcher. The installer is unattended; on first boot the host runs
-# setup-docker.sh + setup-laptop.sh exactly once via first-boot-setup.service.
+# Build host deps: xorriso, gettext-base (envsubst), curl, openssl,
+# python3 (for unzipping the simdd payload; `unzip` is not in stock WSL).
 
 set -euo pipefail
 
@@ -34,29 +36,35 @@ cd "${SCRIPT_DIR}"
 . lib/common.sh
 
 #-----------------------------------------------------------------------------
-# Config (override via env)
+# Config
 #-----------------------------------------------------------------------------
 : "${UBUNTU_ISO_URL:=https://releases.ubuntu.com/24.04/ubuntu-24.04-live-server-amd64.iso}"
 : "${SRC_ISO:=}"
-: "${OUTPUT_ISO:=build/ubuntu-24.04-autoinstall.iso}"
-: "${ISO_HOSTNAME:=ubuntu-laptop}"
-: "${ISO_USERNAME:=ubuntu}"
-: "${ISO_PASSWORD_HASH:=!}"
+: "${ISO_SECTOR:=sectorA}"
+: "${OUTPUT_ISO:=build/ubuntu-24.04-multi-cell-${ISO_SECTOR}.iso}"
+: "${UBUNTU_PASSWORD:=1234}"
 : "${SSH_AUTHORIZED_KEY:=}"
+: "${SIMDD_ZIP:=}"
+: "${ISO_GRUB_TIMEOUT:=30}"
+: "${ISO_GRUB_DEFAULT:=0}"
 
 #-----------------------------------------------------------------------------
 # Preflight
 #-----------------------------------------------------------------------------
-if [ -z "${SSH_AUTHORIZED_KEY}" ]; then
-    die "SSH_AUTHORIZED_KEY is required (the built ISO is SSH-key-only).
-   Example:
-     SSH_AUTHORIZED_KEY=\"\$(cat ~/.ssh/id_ed25519.pub)\" ./build-iso.sh"
-fi
-
-for cmd in xorriso envsubst curl; do
+for cmd in xorriso envsubst curl openssl python3; do
     command -v "${cmd}" >/dev/null \
-        || die "${cmd} not found. Install with: sudo apt install xorriso gettext-base curl"
+        || die "${cmd} not found. Install with: sudo apt install xorriso gettext-base curl openssl python3"
 done
+
+[ -n "${SIMDD_ZIP}" ] || die "SIMDD_ZIP is required (path to drive-download .zip with start-simdd.run, view-head.run, find_camera.sh, simdd_config.txt)"
+[ -s "${SIMDD_ZIP}" ] || die "SIMDD_ZIP not found or empty: ${SIMDD_ZIP}"
+
+if [ -z "${SSH_AUTHORIZED_KEY}" ]; then
+    warn "SSH_AUTHORIZED_KEY is empty. SSH will be installed but no keys"
+    warn "registered. The host will only be reachable from local console"
+    warn "until you add a key manually. Set it with:"
+    warn "  SSH_AUTHORIZED_KEY=\"\$(cat ~/.ssh/id_ed25519.pub)\" ./build-iso.sh"
+fi
 
 mkdir -p build
 
@@ -76,57 +84,95 @@ fi
 [ -s "${SRC_ISO}" ] || die "Source ISO missing or empty: ${SRC_ISO}"
 
 #-----------------------------------------------------------------------------
-# 2. Stage extras/ (setup scripts copied verbatim into /cdrom/extras)
+# 2. Hash the Ubuntu user password
 #-----------------------------------------------------------------------------
-log "Staging extras/ from repo"
+log "Hashing Ubuntu user password (SHA-512 crypt)"
+ISO_PASSWORD_HASH="$(openssl passwd -6 "${UBUNTU_PASSWORD}")"
+[ -n "${ISO_PASSWORD_HASH}" ] || die "Password hashing failed"
+
+#-----------------------------------------------------------------------------
+# 3. Stage extras/ (setup scripts + simdd payload)
+#-----------------------------------------------------------------------------
+log "Staging extras/ from repo + simdd payload from ${SIMDD_ZIP}"
 rm -rf build/extras
 mkdir -p build/extras
 cp setup-docker.sh setup-laptop.sh build/extras/
 cp -r lib phases build/extras/
 chmod +x build/extras/*.sh build/extras/phases/*.sh
 
-#-----------------------------------------------------------------------------
-# 3. Render nocloud/ via envsubst
-#-----------------------------------------------------------------------------
-log "Rendering nocloud/ (hostname=${ISO_HOSTNAME} username=${ISO_USERNAME})"
-rm -rf build/nocloud
-mkdir -p build/nocloud
-SUBST_VARS='${ISO_HOSTNAME} ${ISO_USERNAME} ${ISO_PASSWORD_HASH} ${SSH_AUTHORIZED_KEY}'
-export ISO_HOSTNAME ISO_USERNAME ISO_PASSWORD_HASH SSH_AUTHORIZED_KEY
-envsubst "${SUBST_VARS}" < nocloud/user-data > build/nocloud/user-data
-envsubst "${SUBST_VARS}" < nocloud/meta-data > build/nocloud/meta-data
+mkdir -p build/extras/simdd
+python3 - "${SIMDD_ZIP}" build/extras/simdd <<'PY'
+import sys, zipfile, os
+src, dst = sys.argv[1], sys.argv[2]
+os.makedirs(dst, exist_ok=True)
+expected = {"start-simdd.run", "view-head.run", "find_camera.sh", "simdd_config.txt"}
+with zipfile.ZipFile(src) as z:
+    names = set(z.namelist())
+    missing = expected - names
+    if missing:
+        sys.exit(f"simdd zip is missing expected files: {sorted(missing)}")
+    z.extractall(dst)
+print(f"Extracted {len(expected)} files to {dst}")
+PY
+chmod +x build/extras/simdd/*.run build/extras/simdd/*.sh
 
 #-----------------------------------------------------------------------------
-# 4. Extract + patch GRUB / loopback cmdline with autoinstall args
+# 4. Render 16 per-cell nocloud directories
 #-----------------------------------------------------------------------------
-log "Extracting boot configs from source ISO"
-rm -rf build/grub
-mkdir -p build/grub
-# Each extract runs in its own xorriso invocation: if the ISO lacks one of
-# the optional files (loopback.cfg in some spins), we still proceed.
-xorriso -osirrox on -indev "${SRC_ISO}" \
-    -extract /boot/grub/grub.cfg     build/grub/grub.cfg     2>/dev/null || true
-xorriso -osirrox on -indev "${SRC_ISO}" \
-    -extract /boot/grub/loopback.cfg build/grub/loopback.cfg 2>/dev/null || true
+log "Rendering 16 per-cell nocloud datasources"
+SUBST_VARS='${ISO_CELL_ID} ${ISO_CELL_NAME} ${ISO_HOSTNAME} ${ISO_SECTOR} ${ISO_PASSWORD_HASH} ${SSH_AUTHORIZED_KEY}'
+export ISO_SECTOR ISO_PASSWORD_HASH SSH_AUTHORIZED_KEY
 
-[ -s build/grub/grub.cfg ] \
-    || die "Could not extract /boot/grub/grub.cfg from ${SRC_ISO}.
-   Is this a real Ubuntu 24.04 live-server amd64 ISO?"
+for i in $(seq 1 16); do
+    cell_id="$i"
+    cell_num="$(printf '%02d' "$i")"
+    cell_name="$(printf 'Cell%03d' "$i")"
+    hostname="cell${cell_num}"
 
-# xorriso extracts files read-only; reopen for writing.
-chmod u+w build/grub/*.cfg 2>/dev/null || true
-for f in build/grub/grub.cfg build/grub/loopback.cfg; do
-    [ -s "$f" ] || continue
-    # Insert kernel cmdline args before the standard '---' separator that
-    # subiquity uses. GRUB needs ';' backslash-escaped so it isn't parsed
-    # as a command separator.
-    sed -i 's|---|autoinstall ds=nocloud\\;s=/cdrom/nocloud/ ---|g' "$f"
-    # Tighten boot-menu timeout so unattended installs proceed quickly.
-    sed -i 's/^set timeout=.*/set timeout=5/' "$f"
+    out="build/nocloud-cell${cell_num}"
+    rm -rf "$out"
+    mkdir -p "$out"
+
+    ISO_CELL_ID="$cell_id" ISO_CELL_NAME="$cell_name" ISO_HOSTNAME="$hostname" \
+        envsubst "${SUBST_VARS}" < nocloud/user-data > "$out/user-data"
+    ISO_HOSTNAME="$hostname" \
+        envsubst '${ISO_HOSTNAME}' < nocloud/meta-data > "$out/meta-data"
 done
 
+# Sanity: confirm no leftover placeholders.
+if grep -RnE '\$\{(ISO_[A-Z_]+|SSH_AUTHORIZED_KEY)\}' build/nocloud-cell* >/dev/null; then
+    die "Leftover \${...} placeholders detected in rendered nocloud dirs"
+fi
+
 #-----------------------------------------------------------------------------
-# 5. Repackage ISO (preserve original boot image via -boot_image any replay)
+# 5. Render the 16-entry GRUB cfg
+#-----------------------------------------------------------------------------
+log "Generating 16-entry GRUB cfg"
+rm -rf build/grub
+mkdir -p build/grub
+
+{
+    printf 'set timeout=%s\n'           "${ISO_GRUB_TIMEOUT}"
+    printf 'set default=%s\n'           "${ISO_GRUB_DEFAULT}"
+    printf 'loadfont unicode\n'
+    printf 'set menu_color_normal=white/black\n'
+    printf 'set menu_color_highlight=black/light-gray\n\n'
+} > build/grub/grub.cfg
+
+for i in $(seq 1 16); do
+    cell_num="$(printf '%02d' "$i")"
+    cell_name="$(printf 'Cell%03d' "$i")"
+    ISO_CELL_NUM="$cell_num" ISO_CELL_NAME="$cell_name" ISO_SECTOR="$ISO_SECTOR" \
+        envsubst '${ISO_CELL_NUM} ${ISO_CELL_NAME} ${ISO_SECTOR}' \
+        < nocloud/grub-fragment.cfg.tmpl >> build/grub/grub.cfg
+    printf '\n' >> build/grub/grub.cfg
+done
+
+# loopback.cfg mirrors grub.cfg for tools that boot the ISO as loopback.
+cp build/grub/grub.cfg build/grub/loopback.cfg
+
+#-----------------------------------------------------------------------------
+# 6. Repackage ISO
 #-----------------------------------------------------------------------------
 log "Building ${OUTPUT_ISO}"
 mkdir -p "$(dirname "${OUTPUT_ISO}")"
@@ -136,16 +182,18 @@ XORRISO_ARGS=(
     -indev  "${SRC_ISO}"
     -outdev "${OUTPUT_ISO}"
     -boot_image any replay
-    -volid  "Ubuntu-Auto-24.04"
+    -volid  "Ubuntu-${ISO_SECTOR}-MultiCell"
     -compliance no_emul_toc
     -overwrite on
     -pathspecs on
-    -map build/nocloud /nocloud
     -map build/extras  /extras
-    -map build/grub/grub.cfg /boot/grub/grub.cfg
+    -map build/grub/grub.cfg     /boot/grub/grub.cfg
+    -map build/grub/loopback.cfg /boot/grub/loopback.cfg
 )
-[ -s build/grub/loopback.cfg ] \
-    && XORRISO_ARGS+=(-map build/grub/loopback.cfg /boot/grub/loopback.cfg)
+for i in $(seq 1 16); do
+    cell_num="$(printf '%02d' "$i")"
+    XORRISO_ARGS+=(-map "build/nocloud-cell${cell_num}" "/nocloud-cell${cell_num}")
+done
 
 xorriso "${XORRISO_ARGS[@]}"
 
@@ -154,5 +202,7 @@ log "Burn to USB:"
 log "  Linux:   sudo dd if=${OUTPUT_ISO} of=/dev/sdX bs=4M status=progress conv=fsync"
 log "  Windows: Rufus / Balena Etcher in 'DD image' mode"
 log ""
-log "On first boot the host runs setup-docker.sh + setup-laptop.sh automatically."
-log "Then SSH in: ssh ${ISO_USERNAME}@<host-ip>"
+log "GRUB will show 16 entries (Install Cell001..Cell016, sector ${ISO_SECTOR})."
+log "Default entry is index ${ISO_GRUB_DEFAULT}, timeout ${ISO_GRUB_TIMEOUT}s."
+log "Each cell's first boot will run setup-docker.sh + setup-laptop.sh, then"
+log "start simdd.service. SSH as e.g. Cell003@<host-ip>."
