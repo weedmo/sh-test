@@ -26,6 +26,27 @@ autoinstall:
   keyboard:
     layout: us
   timezone: Asia/Ho_Chi_Minh
+  # Network: ethernet preferred (any en*), Wi-Fi (TommoroVN) as fallback.
+  # Both interfaces are marked optional so install does not block when one
+  # of them is missing. With both up, routing metric makes ethernet the
+  # default outbound path.
+  network:
+    version: 2
+    ethernets:
+      eth-any:
+        match:
+          name: "en*"
+        dhcp4: true
+        optional: true
+    wifis:
+      wifi-any:
+        match:
+          name: "wl*"
+        dhcp4: true
+        optional: true
+        access-points:
+          "TommoroVN":
+            password: "Tommoro@vn"
   identity:
     hostname: ${ISO_HOSTNAME}
     realname: ${ISO_CELL_NAME}
