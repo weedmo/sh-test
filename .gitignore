@@ -9,6 +9,9 @@
 /var/log/laptop-baseline.txt
 *.bak-[0-9]*
 
+# build-iso.sh artifacts (downloaded ISO, staged tree, output ISO)
+/build/
+
 # Editor / OS noise
 *.swp
 .DS_Store

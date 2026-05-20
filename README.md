@@ -141,6 +141,28 @@ cd sh-test
 sudo ./setup-laptop.sh
 ```
 
+### Option D — Single-USB autoinstall ISO (zero-touch install)
+
+Build an Ubuntu 24.04 installer USB that **also** runs `setup-docker.sh` +
+`setup-laptop.sh` on first boot. One ISO replaces the manual install + curl
+flow above.
+
+```bash
+sudo apt install xorriso gettext-base curl   # build host deps
+SSH_AUTHORIZED_KEY="$(cat ~/.ssh/id_ed25519.pub)" \
+ISO_USERNAME=tommoro ISO_HOSTNAME=lab01 \
+./build-iso.sh
+# → build/ubuntu-24.04-autoinstall.iso
+sudo dd if=build/ubuntu-24.04-autoinstall.iso of=/dev/sdX bs=4M \
+        status=progress conv=fsync
+```
+
+The first boot enables `first-boot-setup.service` which runs both setup
+scripts once, then drops `/var/lib/first-boot-setup.done`. Default account
+is SSH-key-only (password login disabled). See
+[`docs/usb-install.md`](./docs/usb-install.md) for the full design rationale
+and alternative delivery formats (Cubic, Ventoy, OCI image).
+
 ### Order on a fresh box
 
 For a fresh Ubuntu 24.04 host that will become a Docker host **and** stay

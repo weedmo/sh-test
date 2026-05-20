@@ -196,9 +196,29 @@ repo**. The host-tuning scripts are already idempotent, so `late-commands`
 can call them directly (1a) or via a versioned OCI image (1b). Burning the
 USB stays the only manual step.
 
-Suggested additions to the repo:
+### What ships in this repo
 
-- `Dockerfile`
-- `build-image.sh` — `docker build` + `docker save`
-- `nocloud/user-data`, `nocloud/meta-data`
-- `build-iso.sh` — unpack official ISO, inject nocloud + extras, `xorriso` repack
+Approach 1a (shell-script delivery) is implemented:
+
+- [`nocloud/user-data`](../nocloud/user-data) — autoinstall config with
+  envsubst placeholders for hostname, username, password hash, SSH key. The
+  `late-commands` block stages `/cdrom/extras` into `/target/opt/setup` and
+  enables a `first-boot-setup.service` oneshot unit.
+- [`nocloud/meta-data`](../nocloud/meta-data) — minimal cloud-init metadata
+  (`instance-id`, `local-hostname`).
+- [`build-iso.sh`](../build-iso.sh) — downloads the live-server ISO,
+  renders `nocloud/`, stages `extras/` from this repo, patches the GRUB
+  cmdline with `autoinstall ds=nocloud;s=/cdrom/nocloud/`, and repackages
+  via `xorriso -boot_image any replay` to preserve hybrid BIOS/UEFI boot.
+
+```bash
+SSH_AUTHORIZED_KEY="$(cat ~/.ssh/id_ed25519.pub)" \
+ISO_USERNAME=tommoro ISO_HOSTNAME=lab01 \
+./build-iso.sh
+```
+
+Approach 1b (OCI-image delivery) is **not** committed because the container
+still needs `--privileged --pid=host -v /:/host` to mutate `/etc/docker`,
+systemd units, and TLP/thermald — the isolation benefit doesn't justify the
+extra moving parts for a single-laptop deployment. The Dockerfile and
+quadlet snippets above remain as a reference if you want to add it later.

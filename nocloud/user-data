@@ -1,0 +1,59 @@
+#cloud-config
+# Ubuntu 24.04 (subiquity) autoinstall configuration.
+#
+# Rendered by build-iso.sh: ${...} placeholders are filled in via envsubst.
+# Required envs: ISO_HOSTNAME, ISO_USERNAME, ISO_PASSWORD_HASH,
+# SSH_AUTHORIZED_KEY.
+#
+# The host comes up with:
+#   - SSH server installed, password login disabled (key-only)
+#   - /opt/setup populated from /cdrom/extras
+#   - first-boot-setup.service that runs setup-docker.sh + setup-laptop.sh
+#     exactly once, then drops a /var/lib/first-boot-setup.done sentinel.
+autoinstall:
+  version: 1
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+  identity:
+    hostname: ${ISO_HOSTNAME}
+    realname: ${ISO_USERNAME}
+    username: ${ISO_USERNAME}
+    # Password is locked by default ('!'); SSH key-only auth below.
+    password: "${ISO_PASSWORD_HASH}"
+  ssh:
+    install-server: true
+    allow-pw: false
+    authorized-keys:
+      - "${SSH_AUTHORIZED_KEY}"
+  packages:
+    - curl
+    - ca-certificates
+    - gnupg
+    - lsb-release
+  storage:
+    layout:
+      name: lvm
+  late-commands:
+    - cp -r /cdrom/extras /target/opt/setup
+    - chmod +x /target/opt/setup/setup-docker.sh /target/opt/setup/setup-laptop.sh
+    - find /target/opt/setup/phases -name '*.sh' -exec chmod +x {} +
+    - |
+      cat > /target/etc/systemd/system/first-boot-setup.service <<'EOF'
+      [Unit]
+      Description=First boot Docker + laptop tuning
+      After=network-online.target
+      Wants=network-online.target
+      ConditionPathExists=!/var/lib/first-boot-setup.done
+
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/bash -c '/opt/setup/setup-docker.sh && /opt/setup/setup-laptop.sh && touch /var/lib/first-boot-setup.done'
+      StandardOutput=journal+console
+      StandardError=journal+console
+      TimeoutStartSec=30min
+
+      [Install]
+      WantedBy=multi-user.target
+      EOF
+    - curtin in-target --target=/target -- systemctl enable first-boot-setup.service
