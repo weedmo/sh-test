@@ -41,7 +41,7 @@ cd "${SCRIPT_DIR}"
 #-----------------------------------------------------------------------------
 # Config
 #-----------------------------------------------------------------------------
-: "${UBUNTU_ISO_URL:=https://releases.ubuntu.com/24.04/ubuntu-24.04-live-server-amd64.iso}"
+: "${UBUNTU_ISO_URL:=https://releases.ubuntu.com/noble/ubuntu-24.04.4-live-server-amd64.iso}"
 : "${SRC_ISO:=}"
 : "${ISO_SECTOR:=sectorA}"
 : "${OUTPUT_ISO:=build/ubuntu-24.04-multi-cell-${ISO_SECTOR}.iso}"
