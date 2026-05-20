@@ -40,6 +40,9 @@ autoinstall:
     - ca-certificates
     - gnupg
     - lsb-release
+    - dbus-x11
+    - android-tools-adb
+    - android-tools-fastboot
   storage:
     layout:
       name: lvm
@@ -92,5 +95,7 @@ autoinstall:
       [Install]
       WantedBy=multi-user.target
       EOF
+    - curtin in-target --target=/target -- bash -c 'echo "export SIMDD_NO_TERMINAL=1" >> /home/${ISO_CELL_NAME}/.bashrc'
+    - curtin in-target --target=/target -- chown ${ISO_CELL_NAME}:${ISO_CELL_NAME} /home/${ISO_CELL_NAME}/.bashrc
     - curtin in-target --target=/target -- systemctl enable first-boot-setup.service
     - curtin in-target --target=/target -- systemctl enable simdd.service
