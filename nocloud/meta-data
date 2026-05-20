@@ -1,2 +1,3 @@
-instance-id: ubuntu-autoinstall
+# Rendered by build-iso.sh per cell (Cell001..Cell016).
+instance-id: ubuntu-autoinstall-${ISO_HOSTNAME}
 local-hostname: ${ISO_HOSTNAME}
