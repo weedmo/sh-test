@@ -62,6 +62,7 @@ autoinstall:
 
       [Service]
       Type=oneshot
+      RemainAfterExit=yes
       ExecStart=/bin/bash -c '/opt/setup/setup-docker.sh && /opt/setup/setup-laptop.sh && touch /var/lib/first-boot-setup.done'
       StandardOutput=journal+console
       StandardError=journal+console

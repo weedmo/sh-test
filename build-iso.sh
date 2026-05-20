@@ -107,11 +107,16 @@ src, dst = sys.argv[1], sys.argv[2]
 os.makedirs(dst, exist_ok=True)
 expected = {"start-simdd.run", "view-head.run", "find_camera.sh", "simdd_config.txt"}
 with zipfile.ZipFile(src) as z:
-    names = set(z.namelist())
-    missing = expected - names
+    flat_names = {os.path.basename(n) for n in z.namelist() if not n.endswith('/')}
+    missing = expected - flat_names
     if missing:
         sys.exit(f"simdd zip is missing expected files: {sorted(missing)}")
-    z.extractall(dst)
+    for member in z.infolist():
+        base = os.path.basename(member.filename)
+        if not base:
+            continue
+        member.filename = base
+        z.extract(member, dst)
 print(f"Extracted {len(expected)} files to {dst}")
 PY
 chmod +x build/extras/simdd/*.run build/extras/simdd/*.sh
