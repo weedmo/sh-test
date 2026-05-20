@@ -1,0 +1,5 @@
+menuentry "Install ${ISO_CELL_NAME} (${ISO_SECTOR})" --class ubuntu --class gnu-linux --class gnu --class os {
+	set gfxpayload=keep
+	linux	/casper/vmlinuz quiet autoinstall ds=nocloud\;s=/cdrom/nocloud-cell${ISO_CELL_NUM}/ ---
+	initrd	/casper/initrd
+}
