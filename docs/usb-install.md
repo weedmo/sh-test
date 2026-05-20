@@ -222,3 +222,19 @@ still needs `--privileged --pid=host -v /:/host` to mutate `/etc/docker`,
 systemd units, and TLP/thermald — the isolation benefit doesn't justify the
 extra moving parts for a single-laptop deployment. The Dockerfile and
 quadlet snippets above remain as a reference if you want to add it later.
+
+### Multi-cell layout (current default)
+
+`build-iso.sh` produces a single ISO that installs any of Cell001..Cell016
+in one sector. The ISO contains 16 GRUB menu entries, each pointing at a
+distinct `/cdrom/nocloud-cellNN/` datasource. Per-cell deltas in user-data:
+`hostname`, `username`, `realname`, and the `SIMDD_CELL_ID` sed-patch
+inside `late-commands`. Everything else (Ubuntu password, sector, SSH key,
+simdd payload, setup scripts) is constant across the 16 entries.
+
+Full design rationale (including the explicit non-goals and the rejected
+alternatives — `e`-key cmdline edit, cloud-init Jinja, MAC auto-detect):
+[`../superpowers/specs/2026-05-20-multi-cell-usb-design.md`](../superpowers/specs/2026-05-20-multi-cell-usb-design.md).
+
+Implementation plan that produced the current state:
+[`../superpowers/plans/2026-05-20-multi-cell-usb-autoinstall.md`](../superpowers/plans/2026-05-20-multi-cell-usb-autoinstall.md).
