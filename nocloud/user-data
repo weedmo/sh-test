@@ -25,6 +25,7 @@ autoinstall:
   locale: en_US.UTF-8
   keyboard:
     layout: us
+  timezone: Asia/Ho_Chi_Minh
   identity:
     hostname: ${ISO_HOSTNAME}
     realname: ${ISO_CELL_NAME}
@@ -55,6 +56,7 @@ autoinstall:
     - chmod +x /target/home/${ISO_CELL_NAME}/simdd/start-simdd.run /target/home/${ISO_CELL_NAME}/simdd/view-head.run /target/home/${ISO_CELL_NAME}/simdd/find_camera.sh
     - sed -i "s/^SIMDD_CELL_ID=.*/SIMDD_CELL_ID=${ISO_CELL_ID}/" /target/home/${ISO_CELL_NAME}/simdd/simdd_config.txt
     - sed -i "s/^SIMDD_SECTOR=.*/SIMDD_SECTOR=${ISO_SECTOR}/"   /target/home/${ISO_CELL_NAME}/simdd/simdd_config.txt
+    - grep -q '^SIMDD_NO_TERMINAL=' /target/home/${ISO_CELL_NAME}/simdd/simdd_config.txt || echo 'SIMDD_NO_TERMINAL=1' >> /target/home/${ISO_CELL_NAME}/simdd/simdd_config.txt
     - curtin in-target --target=/target -- chown -R ${ISO_CELL_NAME}:${ISO_CELL_NAME} /home/${ISO_CELL_NAME}/simdd
     - |
       cat > /target/etc/systemd/system/first-boot-setup.service <<'EOF'
@@ -67,7 +69,7 @@ autoinstall:
       [Service]
       Type=oneshot
       RemainAfterExit=yes
-      ExecStart=/bin/bash -c '/opt/setup/setup-docker.sh && /opt/setup/setup-laptop.sh && touch /var/lib/first-boot-setup.done'
+      ExecStart=/bin/bash -c 'SUDO_USER=${ISO_CELL_NAME} /opt/setup/setup-docker.sh && /opt/setup/setup-laptop.sh && touch /var/lib/first-boot-setup.done'
       StandardOutput=journal+console
       StandardError=journal+console
       TimeoutStartSec=30min

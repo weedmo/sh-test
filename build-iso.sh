@@ -21,8 +21,11 @@
 #   SRC_ISO              path to an already-downloaded live-server ISO
 #   UBUNTU_ISO_URL       default 24.04 live-server amd64 release ISO
 #   OUTPUT_ISO           override output path
-#   ISO_GRUB_TIMEOUT     default 30 (seconds the menu waits)
-#   ISO_GRUB_DEFAULT     default 0 (Cell001)
+#   ISO_GRUB_TIMEOUT     default -1 (wait indefinitely — operator must
+#                        pick a cell every time; no auto-default). Set to
+#                        a positive integer to allow auto-default.
+#   ISO_GRUB_DEFAULT     default 0 (Cell001). Only relevant when
+#                        ISO_GRUB_TIMEOUT is positive.
 #
 # Build host deps: xorriso, gettext-base (envsubst), curl, openssl,
 # python3 (for unzipping the simdd payload; `unzip` is not in stock WSL).
@@ -45,7 +48,7 @@ cd "${SCRIPT_DIR}"
 : "${UBUNTU_PASSWORD:=1234}"
 : "${SSH_AUTHORIZED_KEY:=}"
 : "${SIMDD_ZIP:=}"
-: "${ISO_GRUB_TIMEOUT:=30}"
+: "${ISO_GRUB_TIMEOUT:=-1}"
 : "${ISO_GRUB_DEFAULT:=0}"
 
 #-----------------------------------------------------------------------------
@@ -218,6 +221,10 @@ log "  Linux:   sudo dd if=${OUTPUT_ISO} of=/dev/sdX bs=4M status=progress conv=
 log "  Windows: Rufus / Balena Etcher in 'DD image' mode"
 log ""
 log "GRUB will show 16 entries (Install Cell001..Cell016, sector ${ISO_SECTOR})."
-log "Default entry is index ${ISO_GRUB_DEFAULT}, timeout ${ISO_GRUB_TIMEOUT}s."
+if [ "${ISO_GRUB_TIMEOUT}" = "-1" ]; then
+    log "GRUB will wait indefinitely — operator must explicitly pick a cell."
+else
+    log "Default entry is index ${ISO_GRUB_DEFAULT}, timeout ${ISO_GRUB_TIMEOUT}s."
+fi
 log "Each cell's first boot will run setup-docker.sh + setup-laptop.sh, then"
 log "start simdd.service. SSH as e.g. Cell003@<host-ip>."

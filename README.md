@@ -162,6 +162,15 @@ sudo dd if=build/ubuntu-24.04-multi-cell-sectorA.iso of=/dev/sdX bs=4M \
 Defaults: `ISO_SECTOR=sectorA`, `UBUNTU_PASSWORD=1234` (locally hashed),
 SSH is key-only via `SSH_AUTHORIZED_KEY` (empty value = SSH installed
 but unreachable until you add a key manually — local console only).
+Timezone is `Asia/Ho_Chi_Minh`.
+
+**Operator note — remove the USB before reboot.** The GRUB menu waits
+indefinitely for an explicit cell selection (no auto-default), and
+subiquity automatically reboots once the install finishes. When the
+installer prints **"Please remove the installation medium, then press
+ENTER"**, unplug the USB *before* pressing Enter — otherwise the next
+boot returns to the GRUB menu and you will end up reinstalling the
+machine in a loop.
 
 For sector expansion, re-run with a different `ISO_SECTOR` to produce a
 second ISO. Design rationale and per-cell layout in
