@@ -87,7 +87,7 @@ fi
 # 2. Hash the Ubuntu user password
 #-----------------------------------------------------------------------------
 log "Hashing Ubuntu user password (SHA-512 crypt)"
-ISO_PASSWORD_HASH="$(openssl passwd -6 "${UBUNTU_PASSWORD}")"
+ISO_PASSWORD_HASH="$(printf '%s\n' "${UBUNTU_PASSWORD}" | openssl passwd -6 -stdin)"
 [ -n "${ISO_PASSWORD_HASH}" ] || die "Password hashing failed"
 
 #-----------------------------------------------------------------------------
@@ -142,6 +142,16 @@ done
 # Sanity: confirm no leftover placeholders.
 if grep -RnE '\$\{(ISO_[A-Z_]+|SSH_AUTHORIZED_KEY)\}' build/nocloud-cell* >/dev/null; then
     die "Leftover \${...} placeholders detected in rendered nocloud dirs"
+fi
+
+# When SSH_AUTHORIZED_KEY was empty, the rendered authorized-keys list
+# contains a single empty string. subiquity rejects an empty key, so
+# replace it with an empty list to keep the YAML valid.
+if [ -z "${SSH_AUTHORIZED_KEY}" ]; then
+    for f in build/nocloud-cell*/user-data; do
+        sed -i 's/^    authorized-keys:$/    authorized-keys: []/' "$f"
+        sed -i '/^      - ""$/d' "$f"
+    done
 fi
 
 #-----------------------------------------------------------------------------
