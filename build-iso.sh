@@ -26,6 +26,12 @@
 #                        a positive integer to allow auto-default.
 #   ISO_GRUB_DEFAULT     default 0 (Cell001). Only relevant when
 #                        ISO_GRUB_TIMEOUT is positive.
+#   ISO_GATEWAY          default 10.0.0.254 — Mikrotik gateway IP that
+#                        the per-cell ethernet static route points at.
+#   ISO_DNS              default = ISO_GATEWAY — DNS resolver address
+#                        baked into each cell's netplan.
+#   ISO_PREFIX           default 24 — netmask prefix for the per-cell
+#                        static address (10.0.0.<id>/<prefix>).
 #
 # Build host deps: xorriso, gettext-base (envsubst), curl, openssl,
 # python3 (for unzipping the simdd payload; `unzip` is not in stock WSL).
@@ -50,6 +56,9 @@ cd "${SCRIPT_DIR}"
 : "${SIMDD_ZIP:=}"
 : "${ISO_GRUB_TIMEOUT:=-1}"
 : "${ISO_GRUB_DEFAULT:=0}"
+: "${ISO_GATEWAY:=10.0.0.254}"
+: "${ISO_DNS:=${ISO_GATEWAY}}"
+: "${ISO_PREFIX:=24}"
 
 #-----------------------------------------------------------------------------
 # Preflight
@@ -128,8 +137,8 @@ chmod +x build/extras/simdd/*.run build/extras/simdd/*.sh
 # 4. Render 16 per-cell nocloud directories
 #-----------------------------------------------------------------------------
 log "Rendering 16 per-cell nocloud datasources"
-SUBST_VARS='${ISO_CELL_ID} ${ISO_CELL_NAME} ${ISO_HOSTNAME} ${ISO_SECTOR} ${ISO_PASSWORD_HASH} ${SSH_AUTHORIZED_KEY}'
-export ISO_SECTOR ISO_PASSWORD_HASH SSH_AUTHORIZED_KEY
+SUBST_VARS='${ISO_CELL_ID} ${ISO_CELL_NAME} ${ISO_HOSTNAME} ${ISO_SECTOR} ${ISO_PASSWORD_HASH} ${SSH_AUTHORIZED_KEY} ${ISO_GATEWAY} ${ISO_DNS} ${ISO_PREFIX}'
+export ISO_SECTOR ISO_PASSWORD_HASH SSH_AUTHORIZED_KEY ISO_GATEWAY ISO_DNS ISO_PREFIX
 
 for i in $(seq 1 16); do
     cell_id="$i"

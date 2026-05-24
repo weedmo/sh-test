@@ -26,17 +26,26 @@ autoinstall:
   keyboard:
     layout: us
   timezone: Asia/Ho_Chi_Minh
-  # Network: ethernet preferred (any en*), Wi-Fi (TommoroVN) as fallback.
-  # Both interfaces are marked optional so install does not block when one
-  # of them is missing. With both up, routing metric makes ethernet the
-  # default outbound path.
+  # Network: ethernet on a fixed per-cell static IP (10.0.0.<ISO_CELL_ID>/24,
+  # Cell001=10.0.0.1 ... Cell016=10.0.0.16). The Mikrotik switch acts as
+  # gateway and DNS resolver at ISO_GATEWAY (default 10.0.0.254). Wi-Fi
+  # (TommoroVN) stays DHCP as an outbound fallback. Both interfaces are
+  # optional so install does not block when one is missing.
   network:
     version: 2
     ethernets:
       eth-any:
         match:
           name: "en*"
-        dhcp4: true
+        dhcp4: false
+        addresses:
+          - 10.0.0.${ISO_CELL_ID}/${ISO_PREFIX}
+        routes:
+          - to: default
+            via: ${ISO_GATEWAY}
+        nameservers:
+          addresses:
+            - ${ISO_DNS}
         optional: true
     wifis:
       wifi-any:

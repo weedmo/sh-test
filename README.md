@@ -164,6 +164,13 @@ SSH is key-only via `SSH_AUTHORIZED_KEY` (empty value = SSH installed
 but unreachable until you add a key manually — local console only).
 Timezone is `Asia/Ho_Chi_Minh`.
 
+**Network — static per-cell IP.** Ethernet (`en*`) is pinned to
+`10.0.0.<cell-id>/24` (Cell001 = `10.0.0.1`, Cell016 = `10.0.0.16`)
+with gateway and DNS at `ISO_GATEWAY` (default `10.0.0.254`, expected
+to be the Mikrotik switch). Wi-Fi (`TommoroVN`) stays DHCP as an
+outbound fallback. Override with `ISO_GATEWAY`, `ISO_DNS`, `ISO_PREFIX`
+at build time, e.g. `ISO_GATEWAY=10.0.0.1 ISO_DNS=1.1.1.1 ./build-iso.sh`.
+
 **Operator note — remove the USB before reboot.** The GRUB menu waits
 indefinitely for an explicit cell selection (no auto-default), and
 subiquity automatically reboots once the install finishes. When the
