@@ -8,8 +8,13 @@
 #   build/ubuntu-24.04-multi-cell-${ISO_SECTOR}.iso
 #
 # Required env:
-#   SIMDD_ZIP            path to the .zip containing start-simdd.run +
+#   SIMDD_DIR            path to a directory containing start-simdd.run +
 #                        view-head.run + find_camera.sh + simdd_config.txt
+#                        (typically the `simdd/` folder on a mounted USB,
+#                        e.g. /media/$USER/<LABEL>/simdd). The whole
+#                        directory is copied into the ISO, so any extra
+#                        sidecar files alongside the four required ones
+#                        will ship as well.
 #
 # Optional env:
 #   ISO_SECTOR           default 'sectorA'
@@ -33,8 +38,7 @@
 #   ISO_PREFIX           default 24 — netmask prefix for the per-cell
 #                        static address (10.0.0.<id>/<prefix>).
 #
-# Build host deps: xorriso, gettext-base (envsubst), curl, openssl,
-# python3 (for unzipping the simdd payload; `unzip` is not in stock WSL).
+# Build host deps: xorriso, gettext-base (envsubst), curl, openssl.
 
 set -euo pipefail
 
@@ -53,7 +57,7 @@ cd "${SCRIPT_DIR}"
 : "${OUTPUT_ISO:=build/ubuntu-24.04-multi-cell-${ISO_SECTOR}.iso}"
 : "${UBUNTU_PASSWORD:=1234}"
 : "${SSH_AUTHORIZED_KEY:=}"
-: "${SIMDD_ZIP:=}"
+: "${SIMDD_DIR:=}"
 : "${ISO_GRUB_TIMEOUT:=-1}"
 : "${ISO_GRUB_DEFAULT:=0}"
 : "${ISO_GATEWAY:=10.0.0.254}"
@@ -63,13 +67,16 @@ cd "${SCRIPT_DIR}"
 #-----------------------------------------------------------------------------
 # Preflight
 #-----------------------------------------------------------------------------
-for cmd in xorriso envsubst curl openssl python3; do
+for cmd in xorriso envsubst curl openssl; do
     command -v "${cmd}" >/dev/null \
-        || die "${cmd} not found. Install with: sudo apt install xorriso gettext-base curl openssl python3"
+        || die "${cmd} not found. Install with: sudo apt install xorriso gettext-base curl openssl"
 done
 
-[ -n "${SIMDD_ZIP}" ] || die "SIMDD_ZIP is required (path to drive-download .zip with start-simdd.run, view-head.run, find_camera.sh, simdd_config.txt)"
-[ -s "${SIMDD_ZIP}" ] || die "SIMDD_ZIP not found or empty: ${SIMDD_ZIP}"
+[ -n "${SIMDD_DIR}" ] || die "SIMDD_DIR is required (path to a folder with start-simdd.run, view-head.run, find_camera.sh, simdd_config.txt — e.g. the simdd/ folder on a mounted USB)"
+[ -d "${SIMDD_DIR}" ] || die "SIMDD_DIR is not a directory: ${SIMDD_DIR}"
+for f in start-simdd.run view-head.run find_camera.sh simdd_config.txt; do
+    [ -s "${SIMDD_DIR}/${f}" ] || die "SIMDD_DIR is missing required file: ${f} (under ${SIMDD_DIR})"
+done
 
 if [ -z "${SSH_AUTHORIZED_KEY}" ]; then
     warn "SSH_AUTHORIZED_KEY is empty. SSH will be installed but no keys"
@@ -105,32 +112,17 @@ ISO_PASSWORD_HASH="$(printf '%s\n' "${UBUNTU_PASSWORD}" | openssl passwd -6 -std
 #-----------------------------------------------------------------------------
 # 3. Stage extras/ (setup scripts + simdd payload)
 #-----------------------------------------------------------------------------
-log "Staging extras/ from repo + simdd payload from ${SIMDD_ZIP}"
+log "Staging extras/ from repo + simdd payload from ${SIMDD_DIR}"
 rm -rf build/extras
 mkdir -p build/extras
 cp setup-docker.sh setup-laptop.sh build/extras/
 cp -r lib phases build/extras/
 chmod +x build/extras/*.sh build/extras/phases/*.sh
 
+# Copy the entire simdd folder (preflight has already confirmed the four
+# required files exist; any sidecar files alongside them ship too).
 mkdir -p build/extras/simdd
-python3 - "${SIMDD_ZIP}" build/extras/simdd <<'PY'
-import sys, zipfile, os
-src, dst = sys.argv[1], sys.argv[2]
-os.makedirs(dst, exist_ok=True)
-expected = {"start-simdd.run", "view-head.run", "find_camera.sh", "simdd_config.txt"}
-with zipfile.ZipFile(src) as z:
-    flat_names = {os.path.basename(n) for n in z.namelist() if not n.endswith('/')}
-    missing = expected - flat_names
-    if missing:
-        sys.exit(f"simdd zip is missing expected files: {sorted(missing)}")
-    for member in z.infolist():
-        base = os.path.basename(member.filename)
-        if not base:
-            continue
-        member.filename = base
-        z.extract(member, dst)
-print(f"Extracted {len(expected)} files to {dst}")
-PY
+cp -r "${SIMDD_DIR}/." build/extras/simdd/
 chmod +x build/extras/simdd/*.run build/extras/simdd/*.sh
 
 #-----------------------------------------------------------------------------

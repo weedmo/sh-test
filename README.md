@@ -150,9 +150,12 @@ and then starts `simdd.service` as a daemon. SSH lands on the
 `CellNNN` account.
 
 ```bash
-sudo apt install xorriso gettext-base curl openssl python3   # build host deps
+sudo apt install xorriso gettext-base curl openssl   # build host deps
+# Plug the USB containing the `simdd/` payload folder and point SIMDD_DIR
+# at it. Path varies by distro: e.g. /media/$USER/<LABEL>/simdd on Ubuntu,
+# or /mnt/d/simdd on WSL.
 SSH_AUTHORIZED_KEY="$(cat ~/.ssh/id_ed25519.pub)" \
-SIMDD_ZIP=~/Downloads/drive-download-20260519T075900Z-3-001.zip \
+SIMDD_DIR=/media/$USER/<USB_LABEL>/simdd \
 ./build-iso.sh
 # → build/ubuntu-24.04-multi-cell-sectorA.iso
 sudo dd if=build/ubuntu-24.04-multi-cell-sectorA.iso of=/dev/sdX bs=4M \
